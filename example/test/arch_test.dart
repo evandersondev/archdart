@@ -1,5 +1,6 @@
-import 'package:archdart/archdart.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:archdart/archdart.dart';
 
 void main() {
   test('Classes em repository devem terminar com Repository', () async {
@@ -18,7 +19,6 @@ void main() {
 
   test('Classes em service devem ser públicas', () async {
     await classes()
-        .that()
         .inPackage('services')
         .shouldBe(Visibility.public)
         .check('lib');
@@ -39,14 +39,12 @@ void main() {
   test('Regras de métodos', () async {
     await classes()
         .inPackage('repositories')
-        .that()
-        .haveField('client')
+        .shouldHaveFinalFields('client')
         .check('lib');
   });
 
   test('Métodos dos serviços devem retornar Future', () async {
     await classes()
-        .that()
         .inPackage('services')
         .shouldHaveMethodThat()
         .returnType('Future<void>')
@@ -55,7 +53,6 @@ void main() {
 
   test('Métodos privados em utils', () async {
     await classes()
-        .that()
         .inPackage('utils')
         .shouldHaveAllMethods()
         .shouldBePrivate()
@@ -74,26 +71,21 @@ void main() {
     test('Presentation só pode depender de Domain', () async {
       await classes()
           .inPackage('presentation')
-          .shouldOnlyDependOn(['domain', 'core'])
-          .check('lib');
+          .shouldOnlyDependOn(['domain', 'core']).check('lib');
     });
 
     test('Domain não deve importar pacotes externos HTTP', () async {
-      await classes()
-          .inPackage('domain')
-          .shouldNotHaveImports([
-            'package:http',
-            'package:dio',
-            'package:retrofit',
-          ])
-          .check('lib');
+      await classes().inPackage('domain').shouldNotHaveImports([
+        'package:http',
+        'package:dio',
+        'package:retrofit',
+      ]).check('lib');
     });
 
     test('Presentation só pode depender de Domain e Core', () async {
       await classes()
           .inPackage('presentation')
-          .shouldOnlyDependOn(['domain', 'core'])
-          .check('lib');
+          .shouldOnlyDependOn(['domain', 'core']).check('lib');
     });
   });
 
@@ -101,17 +93,12 @@ void main() {
     test('Repositories devem implementar interface', () async {
       await classes()
           .inPackage('repositories')
-          .that()
           .implement('IRepository')
           .check('lib');
     });
 
     test('Services devem implementar interface', () async {
-      await classes()
-          .inPackage('services')
-          .that()
-          .implement('IService')
-          .check('lib');
+      await classes().inPackage('services').implement('IService').check('lib');
     });
   });
 
