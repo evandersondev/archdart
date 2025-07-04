@@ -7,8 +7,9 @@ import '../utils/rule_base.dart';
 class ExtendRule extends Rule {
   final String package;
   final String parentClass;
+  final List<String>? allowedClasses;
 
-  ExtendRule(this.package, this.parentClass);
+  ExtendRule(this.package, this.parentClass, {this.allowedClasses});
 
   @override
   Future<void> check(String rootDir) async {
@@ -23,8 +24,14 @@ class ExtendRule extends Rule {
       for (final declaration in unit.declarations) {
         if (declaration is ClassDeclaration) {
           final extendsClause = declaration.extendsClause;
-          if (extendsClause == null ||
-              extendsClause.superclass.toString() != parentClass) {
+          final superClass = extendsClause?.superclass.toString();
+          if (allowedClasses != null) {
+            if (superClass == null || !allowedClasses!.contains(superClass)) {
+              throw Exception(
+                'Classe "${declaration.name}" deve herdar de uma das classes: ${allowedClasses!.join(", ")} (Arquivo: $path)',
+              );
+            }
+          } else if (extendsClause == null || superClass != parentClass) {
             throw Exception(
               'Classe "${declaration.name}" deve herdar de $parentClass (Arquivo: $path)',
             );

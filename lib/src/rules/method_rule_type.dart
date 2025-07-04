@@ -4,5 +4,6 @@ enum MethodRuleType {
   returnType,
   parameters,
   visibility,
+  annotation,
   name;
 }

@@ -7,25 +7,40 @@ import '../utils/rule_base.dart';
 class NamingRule extends Rule {
   final String package;
   final String suffix;
+  final bool isEnum;
+  final bool checkContains;
 
-  NamingRule(this.package, this.suffix);
+  NamingRule(this.package, this.suffix,
+      {this.isEnum = false, this.checkContains = false});
 
   @override
   Future<void> check(String rootDir) async {
     final unitsWithPath = await parseDirectoryWithPaths(rootDir);
 
     for (final entry in unitsWithPath.entries) {
-      final path = entry.key;
+      final path = p.normalize(entry.key);
       final unit = entry.value;
 
-      if (!p.split(path).contains(package)) continue;
+      if (!path.contains(p.join(rootDir, package))) continue;
 
       for (final declaration in unit.declarations) {
-        if (declaration is ClassDeclaration) {
-          final name = declaration.name.lexeme;
+        if (isEnum && declaration is! EnumDeclaration) continue;
+        if (!isEnum && declaration is! ClassDeclaration) continue;
+
+        final name = declaration is ClassDeclaration
+            ? declaration.name.lexeme
+            : (declaration as EnumDeclaration).name.lexeme;
+
+        if (checkContains) {
+          if (!name.contains(suffix)) {
+            throw Exception(
+              '${isEnum ? "Enum" : "Classe"} "$name" em "$package" deve conter "$suffix" no nome (Arquivo: $path)',
+            );
+          }
+        } else {
           if (!name.endsWith(suffix)) {
             throw Exception(
-              'Classe "$name" em "$package" deve terminar com "$suffix" (Arquivo: $path)',
+              '${isEnum ? "Enum" : "Classe"} "$name" em "$package" deve terminar com "$suffix" (Arquivo: $path)',
             );
           }
         }

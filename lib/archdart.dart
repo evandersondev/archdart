@@ -19,6 +19,5 @@ export 'src/rules/only_dependency_rule.dart';
 export 'src/rules/reside_in_rule.dart';
 export 'src/rules/visibility_rule.dart';
 export 'src/selectors/class_that.dart';
-export 'src/selectors/method_selector.dart';
 
 // TODO: Export any libraries intended for clients of this package.

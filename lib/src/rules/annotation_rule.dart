@@ -7,8 +7,9 @@ import '../utils/rule_base.dart';
 class AnnotationRule extends Rule {
   final String package;
   final String requiredAnnotation;
+  final bool isEnum;
 
-  AnnotationRule(this.package, this.requiredAnnotation);
+  AnnotationRule(this.package, this.requiredAnnotation, {this.isEnum = false});
 
   @override
   Future<void> check(String rootDir) async {
@@ -21,19 +22,23 @@ class AnnotationRule extends Rule {
       if (!path.contains(p.join(rootDir, package))) continue;
 
       for (final declaration in unit.declarations) {
-        if (declaration is ClassDeclaration) {
-          final annotations = declaration.metadata;
-          final hasAnnotation = annotations.any(
-            (m) =>
-                m.name.name == requiredAnnotation ||
-                m.name.name == '@$requiredAnnotation',
-          );
+        if (isEnum && declaration is! EnumDeclaration) continue;
+        if (!isEnum && declaration is! ClassDeclaration) continue;
 
-          if (!hasAnnotation) {
-            throw Exception(
-              'Classe "${declaration.name}" deveria ter a anotação @$requiredAnnotation (Arquivo: $path)',
-            );
-          }
+        final name = declaration is ClassDeclaration
+            ? declaration.name.lexeme
+            : (declaration as EnumDeclaration).name.lexeme;
+        final annotations = declaration.metadata;
+        final hasAnnotation = annotations.any(
+          (m) =>
+              m.name.name == requiredAnnotation ||
+              m.name.name == '@$requiredAnnotation',
+        );
+
+        if (!hasAnnotation) {
+          throw Exception(
+            '${isEnum ? "Enum" : "Classe"} "$name" deveria ter a anotação @$requiredAnnotation (Arquivo: $path)',
+          );
         }
       }
     }

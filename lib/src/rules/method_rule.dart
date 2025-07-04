@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 
 import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
+
 import 'method_rule_type.dart';
 
 class MethodRule extends Rule {
@@ -13,6 +14,8 @@ class MethodRule extends Rule {
   final bool? isPrivate;
   final String? expectedMethodName;
   final bool checkAll;
+  final String? requiredAnnotation;
+  final bool isFunction;
 
   MethodRule(
     this.package,
@@ -22,6 +25,8 @@ class MethodRule extends Rule {
     this.expectedParameters,
     this.isPrivate,
     this.expectedMethodName,
+    this.requiredAnnotation,
+    this.isFunction = false,
   });
 
   @override
@@ -34,27 +39,68 @@ class MethodRule extends Rule {
 
       if (!path.contains(p.join(rootDir, package))) continue;
 
-      for (final declaration in unit.declarations) {
-        if (declaration is ClassDeclaration) {
-          final className = declaration.name.lexeme;
-          final methods =
-              declaration.members.whereType<MethodDeclaration>().toList();
+      if (isFunction) {
+        final functions =
+            unit.declarations.whereType<FunctionDeclaration>().toList();
+        if (functions.isEmpty) {
+          throw Exception('Nenhuma função top-level encontrada em "$path"');
+        }
 
-          if (methods.isEmpty) {
-            throw Exception(
-              'A classe "$className" não possui métodos '
-              '(Arquivo: $path)',
-            );
-          }
+        if (checkAll) {
+          _validateAllFunctions(functions, path);
+        } else {
+          _validateAtLeastOneFunction(functions, path);
+        }
+      } else {
+        for (final declaration in unit.declarations) {
+          if (declaration is ClassDeclaration) {
+            final className = declaration.name.lexeme;
+            final methods =
+                declaration.members.whereType<MethodDeclaration>().toList();
 
-          if (checkAll) {
-            _validateAllMethods(className, methods, path);
-          } else {
-            _validateAtLeastOneMethod(className, methods, path);
+            if (methods.isEmpty) {
+              throw Exception(
+                  'A classe "$className" não possui métodos (Arquivo: $path)');
+            }
+
+            if (checkAll) {
+              _validateAllMethods(className, methods, path);
+            } else {
+              _validateAtLeastOneMethod(className, methods, path);
+            }
           }
         }
       }
     }
+  }
+
+  void _validateAllFunctions(List<FunctionDeclaration> functions, String path) {
+    final invalidFunctions = <String>[];
+
+    for (final function in functions) {
+      if (!_isFunctionValid(function, functions)) {
+        invalidFunctions.add(_getErrorMessageForFunction(function));
+      }
+    }
+
+    if (invalidFunctions.isNotEmpty) {
+      throw Exception(
+        'As seguintes funções têm problemas:\n${invalidFunctions.join("\n")}\n(Arquivo: $path)',
+      );
+    }
+  }
+
+  void _validateAtLeastOneFunction(
+      List<FunctionDeclaration> functions, String path) {
+    for (final function in functions) {
+      if (_isFunctionValid(function, functions)) {
+        return; // Found at least one valid function
+      }
+    }
+
+    throw Exception(
+      'Deve haver pelo menos uma função que atenda aos critérios:\n${_getCriteriaDescription()}\n(Arquivo: $path)',
+    );
   }
 
   void _validateAllMethods(
@@ -69,9 +115,7 @@ class MethodRule extends Rule {
 
     if (invalidMethods.isNotEmpty) {
       throw Exception(
-        'A classe "$className" tem os seguintes problemas:\n'
-        '${invalidMethods.join("\n")}\n'
-        '(Arquivo: $path)',
+        'A classe "$className" tem os seguintes problemas:\n${invalidMethods.join("\n")}\n(Arquivo: $path)',
       );
     }
   }
@@ -80,15 +124,45 @@ class MethodRule extends Rule {
       String className, List<MethodDeclaration> methods, String path) {
     for (final method in methods) {
       if (_isMethodValid(method, methods)) {
-        return; // Encontrou pelo menos um método válido
+        return; // Found at least one valid method
       }
     }
 
     throw Exception(
-      'A classe "$className" deve ter pelo menos um método que atenda aos critérios:\n'
-      '${_getCriteriaDescription()}\n'
-      '(Arquivo: $path)',
+      'A classe "$className" deve ter pelo menos um método que atenda aos critérios:\n${_getCriteriaDescription()}\n(Arquivo: $path)',
     );
+  }
+
+  bool _isFunctionValid(
+      FunctionDeclaration function, List<FunctionDeclaration> allFunctions) {
+    switch (ruleType) {
+      case MethodRuleType.async:
+        return function.functionExpression.body.isAsynchronous;
+      case MethodRuleType.sync:
+        return !function.functionExpression.body.isAsynchronous;
+      case MethodRuleType.name:
+        return expectedMethodName != null &&
+            function.name.lexeme == expectedMethodName;
+      case MethodRuleType.annotation:
+        return requiredAnnotation != null &&
+            function.metadata.any(
+              (m) =>
+                  m.name.name == requiredAnnotation ||
+                  m.name.name == '@$requiredAnnotation',
+            );
+      case MethodRuleType.returnType:
+        return expectedType != null &&
+            (function.returnType?.toString() ?? '') == expectedType;
+      case MethodRuleType.visibility:
+        final isFunctionPrivate = function.name.lexeme.startsWith('_');
+        return isPrivate != null && isFunctionPrivate == isPrivate;
+      case MethodRuleType.parameters:
+        final parameters = function.functionExpression.parameters?.parameters
+            .map((p) => p.toString())
+            .toList();
+        return expectedParameters != null &&
+            listEquals(parameters, expectedParameters);
+    }
   }
 
   bool _isMethodValid(
@@ -96,27 +170,48 @@ class MethodRule extends Rule {
     switch (ruleType) {
       case MethodRuleType.async:
         return method.body.isAsynchronous;
-
       case MethodRuleType.sync:
         return !method.body.isAsynchronous;
-
       case MethodRuleType.name:
         return expectedMethodName != null &&
             allMethods.any((m) => m.name.lexeme == expectedMethodName);
-
+      case MethodRuleType.annotation:
+        return requiredAnnotation != null &&
+            method.metadata.any(
+              (m) =>
+                  m.name.name == requiredAnnotation ||
+                  m.name.name == '@$requiredAnnotation',
+            );
       case MethodRuleType.returnType:
         return expectedType != null &&
             (method.returnType?.toString() ?? '') == expectedType;
-
       case MethodRuleType.visibility:
         final isMethodPrivate = method.name.lexeme.startsWith('_');
         return isPrivate != null && isMethodPrivate == isPrivate;
-
       case MethodRuleType.parameters:
         final parameters =
             method.parameters?.parameters.map((p) => p.toString()).toList();
         return expectedParameters != null &&
             listEquals(parameters, expectedParameters);
+    }
+  }
+
+  String _getErrorMessageForFunction(FunctionDeclaration function) {
+    switch (ruleType) {
+      case MethodRuleType.async:
+        return 'Função "${function.name}" deve ser assíncrona';
+      case MethodRuleType.sync:
+        return 'Função "${function.name}" deve ser síncrona';
+      case MethodRuleType.name:
+        return 'Deve haver uma função chamada "$expectedMethodName"';
+      case MethodRuleType.annotation:
+        return 'Função "${function.name}" deve ter a anotação @$requiredAnnotation';
+      case MethodRuleType.returnType:
+        return 'Função "${function.name}" deve retornar $expectedType';
+      case MethodRuleType.visibility:
+        return 'Função "${function.name}" deve ser ${isPrivate! ? "privada" : "pública"}';
+      case MethodRuleType.parameters:
+        return 'Função "${function.name}" deve ter os parâmetros: ${expectedParameters?.join(", ")}';
     }
   }
 
@@ -128,6 +223,8 @@ class MethodRule extends Rule {
         return 'Método "${method.name}" deve ser síncrono';
       case MethodRuleType.name:
         return 'Classe deve ter um método chamado "$expectedMethodName"';
+      case MethodRuleType.annotation:
+        return 'Método "${method.name}" deve ter a anotação @$requiredAnnotation';
       case MethodRuleType.returnType:
         return 'Método "${method.name}" deve retornar $expectedType';
       case MethodRuleType.visibility:
@@ -145,6 +242,8 @@ class MethodRule extends Rule {
         return 'seja síncrono';
       case MethodRuleType.name:
         return 'tenha o nome "$expectedMethodName"';
+      case MethodRuleType.annotation:
+        return 'tenha a anotação @$requiredAnnotation';
       case MethodRuleType.returnType:
         return 'retorne $expectedType';
       case MethodRuleType.visibility:

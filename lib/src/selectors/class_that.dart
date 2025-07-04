@@ -1,4 +1,3 @@
-import '../dsl/arch_classes.dart';
 import '../rules/extend_rule.dart';
 import '../rules/hava_field_rule.dart';
 import '../rules/implement_rule.dart';
@@ -24,8 +23,4 @@ class ClassThat {
   HaveFieldRule haveField(String fieldName) {
     return HaveFieldRule(package, fieldName);
   }
-}
-
-extension ClassThatExtension on ClassSelector {
-  ClassThat that() => ClassThat(package);
 }

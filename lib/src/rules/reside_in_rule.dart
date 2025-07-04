@@ -6,8 +6,11 @@ import '../utils/rule_base.dart';
 class ResideInRule extends Rule {
   final String sourcePackage;
   final String targetPackage;
+  final bool isFolder;
+  final List<String>? allowedPackages;
 
-  ResideInRule(this.sourcePackage, this.targetPackage);
+  ResideInRule(this.sourcePackage, this.targetPackage,
+      {this.isFolder = false, this.allowedPackages});
 
   @override
   Future<void> check(String rootDir) async {
@@ -18,10 +21,21 @@ class ResideInRule extends Rule {
 
       if (!path.contains(p.join(rootDir, sourcePackage))) continue;
 
-      if (!path.contains(targetPackage)) {
-        throw Exception(
-          'Classes do pacote "$sourcePackage" devem residir em "$targetPackage"',
-        );
+      if (allowedPackages != null) {
+        final isInAllowedPackage =
+            allowedPackages!.any((pkg) => path.contains(p.join(rootDir, pkg)));
+        if (!isInAllowedPackage) {
+          throw Exception(
+            'Classes do pacote "$sourcePackage" devem residir em um dos pacotes: ${allowedPackages!.join(", ")} (Arquivo: $path)',
+          );
+        }
+      } else {
+        if (!path.contains(
+            isFolder ? targetPackage : p.join(rootDir, targetPackage))) {
+          throw Exception(
+            'Classes do pacote "$sourcePackage" devem residir em "${isFolder ? targetPackage : p.join(rootDir, targetPackage)}" (Arquivo: $path)',
+          );
+        }
       }
     }
   }
