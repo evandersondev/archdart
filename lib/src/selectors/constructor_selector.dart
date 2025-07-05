@@ -1,5 +1,6 @@
 import '../rules/constructor_parameter_rule.dart';
 import '../rules/visibility_rule.dart';
+import '../utils/rule_base.dart';
 
 class ConstructorSelector {
   final String package;

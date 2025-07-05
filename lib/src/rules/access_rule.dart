@@ -6,37 +6,43 @@ import 'package:yaml/yaml.dart';
 
 import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
+import '../utils/rule_messages.dart';
 
-class AccessRule extends Rule {
-  final String package;
+class AccessRule extends ArchRule {
+  final String targetPackage;
   final List<String> allowedPackages;
 
-  AccessRule(this.package, this.allowedPackages);
+  AccessRule(this.targetPackage, this.allowedPackages);
 
   @override
-  Future<void> check(String rootDir) async {
-    final unitsWithPath = await parseDirectoryWithPaths(rootDir);
-    final projectName = await _getProjectName(rootDir);
+  Future<void> check() async {
+    final unitsWithPath = await parseDirectoryWithPaths('.');
+    final violations = <String>[];
 
     for (final entry in unitsWithPath.entries) {
       final path = p.normalize(entry.key);
       final unit = entry.value;
 
-      // Check all files to see if they import the target package
-      final imports = unit.directives.whereType<ImportDirective>();
-      for (final import in imports) {
-        final importUri = import.uri.stringValue ?? '';
-        if (importUri.contains(package) &&
-            importUri.startsWith('package:$projectName/')) {
-          final importingPackage = _getPackageFromPath(path, rootDir);
-          if (importingPackage != null &&
-              !allowedPackages.contains(importingPackage)) {
-            throw Exception(
-              'Pacote "$package" só pode ser acessado por ${allowedPackages.join(", ")}, mas foi acessado por "$importingPackage" (Arquivo: $path)',
-            );
+      // Skip files in target package or allowed packages
+      if (path.contains(targetPackage) ||
+          allowedPackages.any((allowed) => path.contains(allowed))) {
+        continue;
+      }
+
+      for (final directive in unit.directives) {
+        if (directive is ImportDirective) {
+          final importPath = directive.uri.stringValue ?? '';
+
+          if (importPath.contains(targetPackage)) {
+            violations.add(RuleMessages.accessViolation(
+                'classes in $targetPackage', allowedPackages, path));
           }
         }
       }
+    }
+
+    if (violations.isNotEmpty) {
+      throw Exception(RuleMessages.violationFound('Access', violations));
     }
   }
 

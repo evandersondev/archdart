@@ -3,15 +3,16 @@ import 'package:path/path.dart' as p;
 
 import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
+import '../utils/rule_messages.dart';
 
-class CyclicDependencyRule extends Rule {
+class CyclicDependencyRule extends ArchRule {
   final List<String> packages;
 
   CyclicDependencyRule(this.packages);
 
   @override
-  Future<void> check(String rootDir) async {
-    final unitsWithPath = await parseDirectoryWithPaths(rootDir);
+  Future<void> check() async {
+    final unitsWithPath = await parseDirectoryWithPaths('.');
     final dependencies = <String, Set<String>>{};
 
     // Build dependency graph
@@ -19,83 +20,84 @@ class CyclicDependencyRule extends Rule {
       final path = p.normalize(entry.key);
       final unit = entry.value;
 
-      final sourcePackage = _getPackageFromPath(path, rootDir);
+      final sourcePackage = _getPackageFromPath(path);
       if (sourcePackage == null || !packages.contains(sourcePackage)) continue;
 
-      final imports = unit.directives.whereType<ImportDirective>();
-      final targetPackages = <String>{};
+      dependencies[sourcePackage] ??= <String>{};
 
-      for (final import in imports) {
-        final importUri = import.uri.stringValue ?? '';
-        if (!importUri.startsWith('package:')) continue;
+      for (final directive in unit.directives) {
+        if (directive is ImportDirective) {
+          final importPath = directive.uri.stringValue ?? '';
+          final targetPackage = _getPackageFromImport(importPath);
 
-        final targetPackage = _getPackageFromImport(importUri, rootDir);
-        if (targetPackage != null && packages.contains(targetPackage)) {
-          targetPackages.add(targetPackage);
+          if (targetPackage != null &&
+              packages.contains(targetPackage) &&
+              targetPackage != sourcePackage) {
+            dependencies[sourcePackage]!.add(targetPackage);
+          }
         }
       }
-
-      dependencies[sourcePackage] = targetPackages;
     }
 
-    // Detect cycles using DFS
-    final visited = <String>{};
-    final stack = <String>{};
-    final cycles = <List<String>>[];
-
+    // Check for cycles
+    final violations = <String>[];
     for (final package in packages) {
-      if (!visited.contains(package)) {
-        _detectCycles(package, dependencies, visited, stack, [], cycles);
+      final cycle = _findCycle(package, dependencies, <String>{}, <String>[]);
+      if (cycle != null) {
+        violations.add(RuleMessages.cyclicDependencyViolation(cycle));
       }
     }
 
-    if (cycles.isNotEmpty) {
-      final buffer = StringBuffer();
-      buffer.writeln('Ciclos de dependência detectados:');
-      for (final cycle in cycles) {
-        buffer.writeln('  - ${cycle.join(" -> ")}');
-      }
-      throw Exception(buffer.toString());
+    if (violations.isNotEmpty) {
+      throw Exception(
+          RuleMessages.violationFound('Cyclic dependency', violations));
     }
   }
 
-  String? _getPackageFromPath(String path, String rootDir) {
-    final relativePath = p.relative(path, from: rootDir);
-    final parts = p.split(relativePath);
-    if (parts.isEmpty) return null;
-    return parts.first;
+  String? _getPackageFromPath(String path) {
+    for (final package in packages) {
+      if (path.contains(package)) {
+        return package;
+      }
+    }
+    return null;
   }
 
-  String? _getPackageFromImport(String importUri, String rootDir) {
-    final match = RegExp(r'package:([^/]+)/').firstMatch(importUri);
-    return match?.group(1);
+  String? _getPackageFromImport(String importPath) {
+    for (final package in packages) {
+      if (importPath.contains(package)) {
+        return package;
+      }
+    }
+    return null;
   }
 
-  void _detectCycles(
-    String current,
-    Map<String, Set<String>> dependencies,
-    Set<String> visited,
-    Set<String> stack,
-    List<String> currentPath,
-    List<List<String>> cycles,
-  ) {
+  List<String>? _findCycle(
+      String current,
+      Map<String, Set<String>> dependencies,
+      Set<String> visited,
+      List<String> path) {
+    if (path.contains(current)) {
+      final cycleStart = path.indexOf(current);
+      return path.sublist(cycleStart)..add(current);
+    }
+
+    if (visited.contains(current)) {
+      return null;
+    }
+
     visited.add(current);
-    stack.add(current);
-    currentPath.add(current);
+    path.add(current);
 
-    final neighbors = dependencies[current] ?? {};
-    for (final neighbor in neighbors) {
-      if (!visited.contains(neighbor)) {
-        _detectCycles(
-            neighbor, dependencies, visited, stack, currentPath, cycles);
-      } else if (stack.contains(neighbor)) {
-        final cycleStart = currentPath.indexOf(neighbor);
-        final cycle = currentPath.sublist(cycleStart)..add(neighbor);
-        cycles.add(cycle);
+    final deps = dependencies[current] ?? <String>{};
+    for (final dep in deps) {
+      final cycle = _findCycle(dep, dependencies, visited, List.from(path));
+      if (cycle != null) {
+        return cycle;
       }
     }
 
-    stack.remove(current);
-    currentPath.removeLast();
+    path.remove(current);
+    return null;
   }
 }

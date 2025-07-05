@@ -1,5 +1,3 @@
-import 'package:archdart/archdart.dart';
-
 import 'constructor_selector.dart';
 import 'enum_selector.dart';
 import 'file_selector.dart';
@@ -16,9 +14,6 @@ class ElementSelector {
   ElementSelector inFolder(String folder) => ElementSelector(folder);
   ElementSelector inDirectory(String directory) => ElementSelector(directory);
   ElementSelector inFile(String file) => ElementSelector(file);
-
-  // Existing ClassSelector methods
-  ClassSelector asClasses() => ClassSelector(package);
 
   // New entry points
   EnumSelector asEnums() => EnumSelector(package);

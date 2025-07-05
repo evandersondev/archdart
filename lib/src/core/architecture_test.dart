@@ -2,14 +2,14 @@ import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
 
 class ArchitectureTest {
-  final List<Rule> rules = [];
+  final List<ArchRule> rules = [];
   Function(String)? errorHandler;
 
   void setErrorHandler(Function(String) handler) {
     errorHandler = handler;
   }
 
-  void addRule(Rule rule) {
+  void addRule(ArchRule rule) {
     rules.add(rule);
   }
 
@@ -17,15 +17,15 @@ class ArchitectureTest {
     throw Exception(message);
   }
 
-  Future<void> check(String rootDir) async {
+  Future<void> check() async {
     int filesChecked = 0;
     int violationsFound = 0;
-    final unitsWithPath = await parseDirectoryWithPaths(rootDir);
+    final unitsWithPath = await parseDirectoryWithPaths('.');
     filesChecked = unitsWithPath.length;
 
     for (final rule in rules) {
       try {
-        await rule.check(rootDir);
+        await rule.check();
       } catch (e) {
         violationsFound++;
         if (errorHandler != null) {

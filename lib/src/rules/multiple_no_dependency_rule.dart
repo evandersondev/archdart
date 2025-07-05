@@ -5,11 +5,11 @@ import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
 import '../utils/rule_messages.dart';
 
-class ImportRule extends ArchRule {
+class MultipleNoDependencyRule extends ArchRule {
   final String package;
-  final List<String> forbiddenImports;
+  final List<String> forbiddenPackages;
 
-  ImportRule(this.package, this.forbiddenImports);
+  MultipleNoDependencyRule(this.package, this.forbiddenPackages);
 
   @override
   Future<void> check() async {
@@ -26,9 +26,11 @@ class ImportRule extends ArchRule {
         if (directive is ImportDirective) {
           final importPath = directive.uri.stringValue ?? '';
 
-          for (final forbidden in forbiddenImports) {
-            if (importPath.contains(forbidden)) {
-              violations.add(RuleMessages.importViolation(path, importPath));
+          for (final forbiddenPackage in forbiddenPackages) {
+            if (importPath.contains(forbiddenPackage)) {
+              violations.add(
+                  'Package "$package" should not depend on "$forbiddenPackage" '
+                  'but imports "$importPath" (file: $path)');
             }
           }
         }
@@ -36,7 +38,8 @@ class ImportRule extends ArchRule {
     }
 
     if (violations.isNotEmpty) {
-      throw Exception(RuleMessages.violationFound('Import', violations));
+      throw Exception(
+          RuleMessages.violationFound('MultipleNoDependency', violations));
     }
   }
 }

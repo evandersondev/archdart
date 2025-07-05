@@ -3,81 +3,93 @@ import 'package:path/path.dart' as p;
 
 import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
+import '../utils/rule_messages.dart';
 
-import 'visibility_rule.dart';
-
-class FieldRule extends Rule {
+class FieldRule extends ArchRule {
   final String package;
-  final bool shouldBeFinal;
   final String? expectedType;
   final Visibility? visibility;
+  final bool? shouldBeFinal;
 
-  FieldRule(this.package,
-      {this.shouldBeFinal = true, this.expectedType, this.visibility});
+  FieldRule(
+    this.package, {
+    this.expectedType,
+    this.visibility,
+    this.shouldBeFinal,
+  });
 
   @override
-  Future<void> check(String rootDir) async {
-    final unitsWithPath = await parseDirectoryWithPaths(rootDir);
+  Future<void> check() async {
+    final unitsWithPath = await parseDirectoryWithPaths('.');
+    final violations = <String>[];
 
     for (final entry in unitsWithPath.entries) {
       final path = p.normalize(entry.key);
       final unit = entry.value;
 
-      if (!path.contains(p.join(rootDir, package))) continue;
+      if (!path.contains(package)) continue;
 
       for (final declaration in unit.declarations) {
         if (declaration is ClassDeclaration) {
           final className = declaration.name.lexeme;
-          final fields =
-              declaration.members.whereType<FieldDeclaration>().toList();
 
-          if (fields.isEmpty) {
-            continue; // Optionally, throw an error if fields are required
-          }
+          for (final member in declaration.members) {
+            if (member is FieldDeclaration) {
+              for (final variable in member.fields.variables) {
+                final fieldName = variable.name.lexeme;
 
-          for (final field in fields) {
-            final fieldNames =
-                field.fields.variables.map((v) => v.name.lexeme).join(', ');
-            final isFinal =
-                field.fields.isFinal; // Corrected: Use field.fields.isFinal
-            final fieldType = field.fields.type?.toSource();
-            final isPrivate = field.fields.variables
-                .any((v) => v.name.lexeme.startsWith('_'));
-
-            // Check final constraint
-            if (shouldBeFinal && !isFinal) {
-              throw Exception(
-                'Campo(s) "$fieldNames" na classe "$className" deve(m) ser final (Arquivo: $path)',
-              );
-            } else if (!shouldBeFinal && isFinal) {
-              throw Exception(
-                'Campo(s) "$fieldNames" na classe "$className" não deve(m) ser final (Arquivo: $path)',
-              );
-            }
-
-            // Check type constraint
-            if (expectedType != null && fieldType != expectedType) {
-              throw Exception(
-                'Campo(s) "$fieldNames" na classe "$className" deve(m) ser do tipo "$expectedType", mas é(são) "$fieldType" (Arquivo: $path)',
-              );
-            }
-
-            // Check visibility constraint
-            if (visibility != null) {
-              final isFieldPrivate = isPrivate;
-              if (visibility == Visibility.public && isFieldPrivate) {
-                throw Exception(
-                  'Campo(s) "$fieldNames" na classe "$className" deve(m) ser público(s) (Arquivo: $path)',
-                );
-              } else if (visibility == Visibility.private && !isFieldPrivate) {
-                throw Exception(
-                  'Campo(s) "$fieldNames" na classe "$className" deve(m) ser privado(s) (Arquivo: $path)',
-                );
+                _checkFieldType(member, className, fieldName, path, violations);
+                _checkFieldVisibility(
+                    member, className, fieldName, path, violations);
+                _checkFieldFinality(
+                    member, className, fieldName, path, violations);
               }
             }
           }
         }
       }
+    }
+
+    if (violations.isNotEmpty) {
+      throw Exception(RuleMessages.violationFound('Field', violations));
+    }
+  }
+
+  void _checkFieldType(FieldDeclaration field, String className,
+      String fieldName, String path, List<String> violations) {
+    if (expectedType == null) return;
+
+    final fieldType = field.fields.type?.toString();
+    if (fieldType != expectedType) {
+      violations.add(RuleMessages.fieldViolation(
+          className, fieldName, 'must be of type $expectedType', path));
+    }
+  }
+
+  void _checkFieldVisibility(FieldDeclaration field, String className,
+      String fieldName, String path, List<String> violations) {
+    if (visibility == null) return;
+
+    final isPrivate = fieldName.startsWith('_');
+    final expectedPrivate = visibility == Visibility.private;
+
+    if (isPrivate != expectedPrivate) {
+      final expected = expectedPrivate ? 'private' : 'public';
+      violations.add(RuleMessages.fieldViolation(
+          className, fieldName, 'must be $expected', path));
+    }
+  }
+
+  void _checkFieldFinality(FieldDeclaration field, String className,
+      String fieldName, String path, List<String> violations) {
+    if (shouldBeFinal == null) return;
+
+    final isFinal = field.fields.isFinal;
+
+    if (isFinal != shouldBeFinal!) {
+      final expected = shouldBeFinal! ? 'final' : 'non-final';
+      violations.add(RuleMessages.fieldViolation(
+          className, fieldName, 'must be $expected', path));
     }
   }
 }

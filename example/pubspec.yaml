@@ -13,6 +13,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   archdart:
     path: ../
+  http: ^1.4.0
 
 dev_dependencies:
   flutter_test:

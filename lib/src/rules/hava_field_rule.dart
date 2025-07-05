@@ -4,7 +4,7 @@ import 'package:path/path.dart' as p;
 import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
 
-class HaveFieldRule extends Rule {
+class HaveFieldRule extends ArchRule {
   final String package;
   final String fieldName;
   final String? fieldType;
@@ -12,14 +12,17 @@ class HaveFieldRule extends Rule {
   HaveFieldRule(this.package, this.fieldName, {this.fieldType});
 
   @override
-  Future<void> check(String rootDir) async {
-    final unitsWithPath = await parseDirectoryWithPaths(rootDir);
+  Future<void> check() async {
+    final unitsWithPath = await parseDirectoryWithPaths('.');
 
     for (final entry in unitsWithPath.entries) {
       final path = p.normalize(entry.key);
       final unit = entry.value;
 
-      if (!path.contains(p.join(rootDir, package))) continue;
+      if (!path.contains(p.join('.', package))) continue;
+
+      final pathSegments = path.split(p.separator);
+      if (!pathSegments.contains(package)) continue;
 
       for (final declaration in unit.declarations) {
         if (declaration is ClassDeclaration) {
@@ -29,8 +32,8 @@ class HaveFieldRule extends Rule {
               return variables.any((variable) {
                 final hasCorrectName = variable.name.lexeme == fieldName;
                 if (fieldType != null) {
-                  return hasCorrectName && 
-                         member.fields.type?.toSource() == fieldType;
+                  return hasCorrectName &&
+                      member.fields.type?.toSource() == fieldType;
                 }
                 return hasCorrectName;
               });

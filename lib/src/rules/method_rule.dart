@@ -3,262 +3,225 @@ import 'package:path/path.dart' as p;
 
 import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
-
+import '../utils/rule_messages.dart';
 import 'method_rule_type.dart';
 
-class MethodRule extends Rule {
+class MethodRule extends ArchRule {
   final String package;
   final MethodRuleType ruleType;
   final String? expectedType;
-  final List<String>? expectedParameters;
-  final bool? isPrivate;
   final String? expectedMethodName;
-  final bool checkAll;
+  final List<String>? expectedParameters;
   final String? requiredAnnotation;
+  final bool? isPrivate;
+  final bool checkAll;
   final bool isFunction;
+  final bool negate;
 
   MethodRule(
     this.package,
     this.ruleType, {
-    this.checkAll = false,
     this.expectedType,
-    this.expectedParameters,
-    this.isPrivate,
     this.expectedMethodName,
+    this.expectedParameters,
     this.requiredAnnotation,
+    this.isPrivate,
+    this.checkAll = false,
     this.isFunction = false,
+    this.negate = false,
   });
 
   @override
-  Future<void> check(String rootDir) async {
-    final unitsWithPath = await parseDirectoryWithPaths(rootDir);
+  Future<void> check() async {
+    final unitsWithPath = await parseDirectoryWithPaths('.');
+    final violations = <String>[];
 
     for (final entry in unitsWithPath.entries) {
       final path = p.normalize(entry.key);
       final unit = entry.value;
 
-      if (!path.contains(p.join(rootDir, package))) continue;
+      if (!path.contains(package)) continue;
 
-      if (isFunction) {
-        final functions =
-            unit.declarations.whereType<FunctionDeclaration>().toList();
-        if (functions.isEmpty) {
-          throw Exception('Nenhuma função top-level encontrada em "$path"');
+      for (final declaration in unit.declarations) {
+        if (isFunction && declaration is FunctionDeclaration) {
+          _checkFunction(declaration, path, violations);
+        } else if (declaration is ClassDeclaration) {
+          _checkClassMethods(declaration, path, violations);
         }
+      }
+    }
 
-        if (checkAll) {
-          _validateAllFunctions(functions, path);
-        } else {
-          _validateAtLeastOneFunction(functions, path);
+    if (violations.isNotEmpty) {
+      throw Exception(RuleMessages.violationFound('Method', violations));
+    }
+  }
+
+  void _checkFunction(
+      FunctionDeclaration function, String path, List<String> violations) {
+    final functionName = function.name.lexeme;
+    final hasExpectedBehavior = _checkFunctionRule(function);
+
+    if (negate) {
+      if (hasExpectedBehavior) {
+        violations.add(
+            'Function "$functionName" should NOT ${_getRuleDescription()} (file: $path)');
+      }
+    } else {
+      if (!hasExpectedBehavior) {
+        violations.add(
+            'Function "$functionName" should ${_getRuleDescription()} (file: $path)');
+      }
+    }
+  }
+
+  void _checkClassMethods(
+      ClassDeclaration classDeclaration, String path, List<String> violations) {
+    final className = classDeclaration.name.lexeme;
+    final methods = classDeclaration.members.whereType<MethodDeclaration>();
+
+    for (final method in methods) {
+      final methodName = method.name.lexeme;
+      final hasExpectedBehavior = _checkMethodRule(method);
+
+      if (negate) {
+        if (hasExpectedBehavior) {
+          violations.add(
+              'Method "$methodName" in class "$className" should NOT ${_getRuleDescription()} (file: $path)');
         }
       } else {
-        for (final declaration in unit.declarations) {
-          if (declaration is ClassDeclaration) {
-            final className = declaration.name.lexeme;
-            final methods =
-                declaration.members.whereType<MethodDeclaration>().toList();
-
-            if (methods.isEmpty) {
-              throw Exception(
-                  'A classe "$className" não possui métodos (Arquivo: $path)');
-            }
-
-            if (checkAll) {
-              _validateAllMethods(className, methods, path);
-            } else {
-              _validateAtLeastOneMethod(className, methods, path);
-            }
-          }
+        if (!hasExpectedBehavior) {
+          violations.add(
+              'Method "$methodName" in class "$className" should ${_getRuleDescription()} (file: $path)');
         }
       }
     }
   }
 
-  void _validateAllFunctions(List<FunctionDeclaration> functions, String path) {
-    final invalidFunctions = <String>[];
+  bool _checkFunctionRule(FunctionDeclaration function) {
+    switch (ruleType) {
+      case MethodRuleType.async:
+        return function.functionExpression.body is BlockFunctionBody &&
+            (function.functionExpression.body as BlockFunctionBody)
+                    .keyword
+                    ?.lexeme ==
+                'async';
+      case MethodRuleType.sync:
+        return function.functionExpression.body is BlockFunctionBody &&
+            (function.functionExpression.body as BlockFunctionBody)
+                    .keyword
+                    ?.lexeme !=
+                'async';
+      case MethodRuleType.returnType:
+        return function.returnType?.toString() == expectedType;
+      case MethodRuleType.parameters:
+        final params = function.functionExpression.parameters?.parameters;
+        return _checkFunctionParameters(params);
+      case MethodRuleType.name:
+        return function.name.lexeme == expectedMethodName;
+      case MethodRuleType.annotation:
+        return _hasAnnotation(function.metadata);
+      case MethodRuleType.visibility:
+        final isPrivateFunction = function.name.lexeme.startsWith('_');
+        return isPrivate == true ? isPrivateFunction : !isPrivateFunction;
+    }
+  }
 
-    for (final function in functions) {
-      if (!_isFunctionValid(function, functions)) {
-        invalidFunctions.add(_getErrorMessageForFunction(function));
+  bool _checkMethodRule(MethodDeclaration method) {
+    switch (ruleType) {
+      case MethodRuleType.async:
+        return method.body is BlockFunctionBody &&
+            (method.body as BlockFunctionBody).keyword?.lexeme == 'async';
+      case MethodRuleType.sync:
+        return method.body is BlockFunctionBody &&
+            (method.body as BlockFunctionBody).keyword?.lexeme != 'async';
+      case MethodRuleType.returnType:
+        return method.returnType?.toString() == expectedType;
+      case MethodRuleType.parameters:
+        final params = method.parameters?.parameters;
+        return _checkMethodParameters(params);
+      case MethodRuleType.name:
+        return method.name.lexeme == expectedMethodName;
+      case MethodRuleType.annotation:
+        return _hasAnnotation(method.metadata);
+      case MethodRuleType.visibility:
+        final isPrivateMethod = method.name.lexeme.startsWith('_');
+        return isPrivate == true ? isPrivateMethod : !isPrivateMethod;
+    }
+  }
+
+  bool _checkFunctionParameters(List<FormalParameter>? params) {
+    if (expectedParameters == null) return true;
+
+    final paramList = params ?? [];
+
+    if (paramList.length != expectedParameters!.length) return false;
+
+    for (int i = 0; i < paramList.length; i++) {
+      final param = paramList[i];
+      final expectedParam = expectedParameters![i];
+
+      // Verificar tipo do parâmetro
+      if (param is SimpleFormalParameter) {
+        if (param.type?.toString() != expectedParam) return false;
+      } else if (param is DefaultFormalParameter) {
+        final innerParam = param.parameter;
+        if (innerParam is SimpleFormalParameter) {
+          if (innerParam.type?.toString() != expectedParam) return false;
+        }
       }
     }
 
-    if (invalidFunctions.isNotEmpty) {
-      throw Exception(
-        'As seguintes funções têm problemas:\n${invalidFunctions.join("\n")}\n(Arquivo: $path)',
-      );
-    }
-  }
-
-  void _validateAtLeastOneFunction(
-      List<FunctionDeclaration> functions, String path) {
-    for (final function in functions) {
-      if (_isFunctionValid(function, functions)) {
-        return; // Found at least one valid function
-      }
-    }
-
-    throw Exception(
-      'Deve haver pelo menos uma função que atenda aos critérios:\n${_getCriteriaDescription()}\n(Arquivo: $path)',
-    );
-  }
-
-  void _validateAllMethods(
-      String className, List<MethodDeclaration> methods, String path) {
-    final invalidMethods = <String>[];
-
-    for (final method in methods) {
-      if (!_isMethodValid(method, methods)) {
-        invalidMethods.add(_getErrorMessage(method));
-      }
-    }
-
-    if (invalidMethods.isNotEmpty) {
-      throw Exception(
-        'A classe "$className" tem os seguintes problemas:\n${invalidMethods.join("\n")}\n(Arquivo: $path)',
-      );
-    }
-  }
-
-  void _validateAtLeastOneMethod(
-      String className, List<MethodDeclaration> methods, String path) {
-    for (final method in methods) {
-      if (_isMethodValid(method, methods)) {
-        return; // Found at least one valid method
-      }
-    }
-
-    throw Exception(
-      'A classe "$className" deve ter pelo menos um método que atenda aos critérios:\n${_getCriteriaDescription()}\n(Arquivo: $path)',
-    );
-  }
-
-  bool _isFunctionValid(
-      FunctionDeclaration function, List<FunctionDeclaration> allFunctions) {
-    switch (ruleType) {
-      case MethodRuleType.async:
-        return function.functionExpression.body.isAsynchronous;
-      case MethodRuleType.sync:
-        return !function.functionExpression.body.isAsynchronous;
-      case MethodRuleType.name:
-        return expectedMethodName != null &&
-            function.name.lexeme == expectedMethodName;
-      case MethodRuleType.annotation:
-        return requiredAnnotation != null &&
-            function.metadata.any(
-              (m) =>
-                  m.name.name == requiredAnnotation ||
-                  m.name.name == '@$requiredAnnotation',
-            );
-      case MethodRuleType.returnType:
-        return expectedType != null &&
-            (function.returnType?.toString() ?? '') == expectedType;
-      case MethodRuleType.visibility:
-        final isFunctionPrivate = function.name.lexeme.startsWith('_');
-        return isPrivate != null && isFunctionPrivate == isPrivate;
-      case MethodRuleType.parameters:
-        final parameters = function.functionExpression.parameters?.parameters
-            .map((p) => p.toString())
-            .toList();
-        return expectedParameters != null &&
-            listEquals(parameters, expectedParameters);
-    }
-  }
-
-  bool _isMethodValid(
-      MethodDeclaration method, List<MethodDeclaration> allMethods) {
-    switch (ruleType) {
-      case MethodRuleType.async:
-        return method.body.isAsynchronous;
-      case MethodRuleType.sync:
-        return !method.body.isAsynchronous;
-      case MethodRuleType.name:
-        return expectedMethodName != null &&
-            allMethods.any((m) => m.name.lexeme == expectedMethodName);
-      case MethodRuleType.annotation:
-        return requiredAnnotation != null &&
-            method.metadata.any(
-              (m) =>
-                  m.name.name == requiredAnnotation ||
-                  m.name.name == '@$requiredAnnotation',
-            );
-      case MethodRuleType.returnType:
-        return expectedType != null &&
-            (method.returnType?.toString() ?? '') == expectedType;
-      case MethodRuleType.visibility:
-        final isMethodPrivate = method.name.lexeme.startsWith('_');
-        return isPrivate != null && isMethodPrivate == isPrivate;
-      case MethodRuleType.parameters:
-        final parameters =
-            method.parameters?.parameters.map((p) => p.toString()).toList();
-        return expectedParameters != null &&
-            listEquals(parameters, expectedParameters);
-    }
-  }
-
-  String _getErrorMessageForFunction(FunctionDeclaration function) {
-    switch (ruleType) {
-      case MethodRuleType.async:
-        return 'Função "${function.name}" deve ser assíncrona';
-      case MethodRuleType.sync:
-        return 'Função "${function.name}" deve ser síncrona';
-      case MethodRuleType.name:
-        return 'Deve haver uma função chamada "$expectedMethodName"';
-      case MethodRuleType.annotation:
-        return 'Função "${function.name}" deve ter a anotação @$requiredAnnotation';
-      case MethodRuleType.returnType:
-        return 'Função "${function.name}" deve retornar $expectedType';
-      case MethodRuleType.visibility:
-        return 'Função "${function.name}" deve ser ${isPrivate! ? "privada" : "pública"}';
-      case MethodRuleType.parameters:
-        return 'Função "${function.name}" deve ter os parâmetros: ${expectedParameters?.join(", ")}';
-    }
-  }
-
-  String _getErrorMessage(MethodDeclaration method) {
-    switch (ruleType) {
-      case MethodRuleType.async:
-        return 'Método "${method.name}" deve ser assíncrono';
-      case MethodRuleType.sync:
-        return 'Método "${method.name}" deve ser síncrono';
-      case MethodRuleType.name:
-        return 'Classe deve ter um método chamado "$expectedMethodName"';
-      case MethodRuleType.annotation:
-        return 'Método "${method.name}" deve ter a anotação @$requiredAnnotation';
-      case MethodRuleType.returnType:
-        return 'Método "${method.name}" deve retornar $expectedType';
-      case MethodRuleType.visibility:
-        return 'Método "${method.name}" deve ser ${isPrivate! ? "privado" : "público"}';
-      case MethodRuleType.parameters:
-        return 'Método "${method.name}" deve ter os parâmetros: ${expectedParameters?.join(", ")}';
-    }
-  }
-
-  String _getCriteriaDescription() {
-    switch (ruleType) {
-      case MethodRuleType.async:
-        return 'seja assíncrono';
-      case MethodRuleType.sync:
-        return 'seja síncrono';
-      case MethodRuleType.name:
-        return 'tenha o nome "$expectedMethodName"';
-      case MethodRuleType.annotation:
-        return 'tenha a anotação @$requiredAnnotation';
-      case MethodRuleType.returnType:
-        return 'retorne $expectedType';
-      case MethodRuleType.visibility:
-        return 'seja ${isPrivate! ? "privado" : "público"}';
-      case MethodRuleType.parameters:
-        return 'tenha os parâmetros: ${expectedParameters?.join(", ")}';
-    }
-  }
-
-  bool listEquals<T>(List<T>? a, List<T>? b) {
-    if (a == null) return b == null;
-    if (b == null || a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
     return true;
+  }
+
+  bool _checkMethodParameters(List<FormalParameter>? params) {
+    if (expectedParameters == null) return true;
+
+    final paramList = params ?? [];
+
+    if (paramList.length != expectedParameters!.length) return false;
+
+    for (int i = 0; i < paramList.length; i++) {
+      final param = paramList[i];
+      final expectedParam = expectedParameters![i];
+
+      // Verificar tipo do parâmetro
+      if (param is SimpleFormalParameter) {
+        if (param.type?.toString() != expectedParam) return false;
+      } else if (param is DefaultFormalParameter) {
+        final innerParam = param.parameter;
+        if (innerParam is SimpleFormalParameter) {
+          if (innerParam.type?.toString() != expectedParam) return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  bool _hasAnnotation(List<Annotation> annotations) {
+    if (requiredAnnotation == null) return true;
+
+    return annotations
+        .any((annotation) => annotation.name.toString() == requiredAnnotation);
+  }
+
+  String _getRuleDescription() {
+    switch (ruleType) {
+      case MethodRuleType.async:
+        return 'be async';
+      case MethodRuleType.sync:
+        return 'be sync';
+      case MethodRuleType.returnType:
+        return 'return type $expectedType';
+      case MethodRuleType.parameters:
+        return 'have parameters: ${expectedParameters?.join(', ') ?? 'none'}';
+      case MethodRuleType.name:
+        return 'be named $expectedMethodName';
+      case MethodRuleType.annotation:
+        return 'have annotation @$requiredAnnotation';
+      case MethodRuleType.visibility:
+        return isPrivate == true ? 'be private' : 'be public';
+    }
   }
 }

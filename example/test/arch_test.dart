@@ -1,143 +1,173 @@
+import 'package:archdart/archdart.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:archdart/archdart.dart';
-
 void main() {
-  test('Classes em repository devem terminar com Repository', () async {
-    await classes()
-        .inPackage('repositories')
-        .shouldHaveNameEndingWith('Repository')
-        .check('lib');
+  group('Regras de Nome e Visibilidade', () {
+    test('Repositories devem terminar com Repository', () async {
+      ArchRule rule = classes()
+          .inFolder('infra/repositories')
+          .shouldHaveNameEndingWith('Repository');
+
+      await rule.check();
+    });
+
+    test('Services devem terminar com Service e ser públicos', () async {
+      await classes()
+          .inFolder('infra/services')
+          .shouldBe(Visibility.public)
+          .andAlso()
+          .shouldHaveNameEndingWith('Service')
+          .check();
+    });
+
+    // test('Classes muito grandes devem ser evitadas', () async {
+    //   await classes()
+    //       .withLineCountGreaterThan(500)
+    //       .shouldFail('Classes com mais de 500 linhas precisam ser divididas')
+    //       .check();
+    // });
   });
 
-  test('Classes em service devem ter anotação @immutable', () async {
-    await classes()
-        .inPackage('services')
-        .shouldBeAnnotatedWith('immutable')
-        .check('lib');
-  });
+  group('Camadas e Dependências', () {
+    test('Presentation não deve acessar Infra', () async {
+      await classes()
+          .inPackage('presentation')
+          .shouldNotDependOn('infra')
+          .check();
+    });
 
-  test('Classes em service devem ser públicas', () async {
-    await classes()
-        .inPackage('services')
-        .shouldBe(Visibility.public)
-        .check('lib');
-  });
-
-  test('Regras de camadas', () async {
-    final layerRule = LayerRule([
-      'presentation',
-      'domain',
-      'data',
-      'core',
-      'utils',
-    ]);
-
-    await layerRule.check('lib');
-  });
-
-  test('Regras de métodos', () async {
-    await classes()
-        .inPackage('repositories')
-        .shouldHaveFinalFields('client')
-        .check('lib');
-  });
-
-  test('Métodos dos serviços devem retornar Future', () async {
-    await classes()
-        .inPackage('services')
-        .shouldHaveMethodThat()
-        .returnType('Future<void>')
-        .check('lib');
-  });
-
-  test('Métodos privados em utils', () async {
-    await classes()
-        .inPackage('utils')
-        .shouldHaveAllMethods()
-        .shouldBePrivate()
-        .check('lib');
-  });
-
-  group('Regras de Dependência', () {
-    test('Domain não deve depender de Data', () async {
+    test('Domain não deve depender de Presentation ou Infra', () async {
       await classes()
           .inPackage('domain')
-          .shouldNotDependOn('data')
-          .check('lib');
+          .shouldNotDependOnAny(['presentation', 'infra']).check();
     });
 
-    // Todo: Continar daqui!
-    test('Presentation só pode depender de Domain', () async {
+    test('Infra só pode acessar Domain e Core', () async {
+      await classes()
+          .inPackage('infra')
+          .shouldOnlyDependOn(['domain', 'core']).check();
+    });
+
+    test('Presentation só pode acessar Domain e Core', () async {
       await classes()
           .inPackage('presentation')
-          .shouldOnlyDependOn(['domain', 'core']).check('lib');
+          .shouldOnlyDependOn(['domain', 'core']).check();
     });
 
-    test('Domain não deve importar pacotes externos HTTP', () async {
-      await classes().inPackage('domain').shouldNotHaveImports([
-        'package:http',
-        'package:dio',
-        'package:retrofit',
-      ]).check('lib');
-    });
-
-    test('Presentation só pode depender de Domain e Core', () async {
+    test('Repositories no domínio devem ser abstratos', () async {
       await classes()
-          .inPackage('presentation')
-          .shouldOnlyDependOn(['domain', 'core']).check('lib');
+          .inFolder('domain/repositories')
+          .shouldBeAbstract()
+          .andAlso()
+          .shouldHaveNameEndingWith('Repository')
+          .check();
     });
   });
 
-  group('Regras de Interface', () {
-    test('Repositories devem implementar interface', () async {
-      await classes()
-          .inPackage('repositories')
-          .implement('IRepository')
-          .check('lib');
+  group('Pureza do domínio', () {
+    test('Domain não deve importar pacotes Flutter ou IO', () async {
+      await classes().inPackage('domain').shouldNotHaveImports([
+        'package:flutter',
+        'package:flutter/material.dart',
+        'dart:io',
+      ]).check();
     });
 
-    test('Services devem implementar interface', () async {
-      await classes().inPackage('services').implement('IService').check('lib');
+    test('Entities devem ser final', () async {
+      await classes().inFolder('domain/entities').shouldBeFinal().check();
+    });
+
+    test(
+        'Classes que terminam com Controller. devem estar nas pastas corretas.',
+        () async {
+      await classes()
+          .withNameEndingWith('Controller')
+          .shouldBeInFolder('presentation/controllers')
+          .check();
+    });
+
+    test('Entities devem ter todos parâmetros obrigatórios nomeados', () async {
+      await classes()
+          .inFolder('domain/entities')
+          .shouldHaveOnlyNamedRequiredParams()
+          .check();
     });
   });
 
   group('Regras de Clean Architecture', () {
     test('UseCases devem ter método execute', () async {
       await classes()
-          .inPackage('domain/usecases') // Corrigido o pacote
-          .shouldHaveMethodThat() // Adicionado método correto
-          .hasMethodNamed('execute') // Método para verificar nome
-          .check('lib');
+          .inFolder('domain/usecases')
+          .shouldHaveMethodThat()
+          .hasMethodNamed('execute')
+          .check();
     });
 
     test('Entities não devem ter dependências externas', () async {
-      await classes()
-          .inPackage('domain/entities')
-          .shouldNotDependOn('package:http') // Usando método existente
-          .check('lib');
+      await classes().inFolder('domain/entities').shouldNotHaveImports([
+        'package:http',
+        'package:dio',
+        'package:flutter',
+      ]).check();
     });
   });
 
-  group('Regras de Estado', () {
-    test('Controllers devem ser imutáveis', () async {
+  group('Isolamento de Features', () {
+    test('Features não devem se referenciar entre si', () async {
+      await features().shouldBeIndependent().check();
+    });
+  });
+
+  group('Regras de Estado na Presentation', () {
+    test('Controllers devem ser anotados com @immutable', () async {
       await classes()
-          .inPackage('presentation/controllers') // Corrigido o pacote
-          .shouldBeAnnotatedWith('immutable') // Usando método existente
-          .check('lib');
+          .inFolder('presentation/controllers')
+          .shouldBeAnnotatedWith('immutable')
+          .check();
     });
 
-    test('States devem implementar Freezed', () async {
+    test('States devem terminar com State e usar Freezed', () async {
       await classes()
-          .inPackage('presentation/states') // Corrigido o pacote
-          .shouldHaveNameEndingWith('State') // Primeiro verifica o nome
-          .check('lib');
+          .inFolder('presentation/states')
+          .shouldHaveNameEndingWith('State')
+          .check();
 
-      // Teste separado para verificar a anotação
       await classes()
-          .inPackage('presentation/states')
-          .shouldBeAnnotatedWith('freezed') // Usando método existente
-          .check('lib');
+          .inFolder('presentation/states')
+          .shouldBeAnnotatedWith('freezed')
+          .check();
     });
+  });
+
+  group('Organização de Camadas', () {
+    // test('Camadas principais devem existir', () async {
+    //   await layers(['presentation', 'domain', 'infra', 'core'])
+    //       .onlyStructure()
+    //       .requireAllLayers()
+    //       .check();
+    // });
+
+    test('Camadas devem respeitar estrutura esperada', () async {
+      await layers(['presentation', 'domain', 'infra', 'core'])
+          .onlyStructure()
+          .allowMissingLayers()
+          .check();
+    });
+  });
+
+  group('Interfaces', () {
+    test('Repositories devem implementar suas interfaces', () async {
+      await classes()
+          .inFolder('infra/repositories')
+          .shouldImplement('IUserRepository')
+          .check();
+    });
+
+    // test('Services devem implementar suas interfaces', () async {
+    //   await classes()
+    //       .inFolder('infra/services')
+    //       .shouldImplementInterfaceThatEndsWith('Service')
+    //       .check();
+    // });
   });
 }

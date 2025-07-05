@@ -4,6 +4,7 @@
 library;
 
 export 'src/dsl/arch_classes.dart';
+export 'src/dsl/layer_dsl.dart';
 export 'src/rules/annotation_rule.dart';
 export 'src/rules/extend_rule.dart';
 export 'src/rules/field_rule.dart';
@@ -19,5 +20,6 @@ export 'src/rules/only_dependency_rule.dart';
 export 'src/rules/reside_in_rule.dart';
 export 'src/rules/visibility_rule.dart';
 export 'src/selectors/class_that.dart';
+export 'src/utils/rule_base.dart';
 
 // TODO: Export any libraries intended for clients of this package.

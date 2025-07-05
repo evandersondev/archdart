@@ -1,45 +1,39 @@
-import 'package:analyzer/dart/ast/ast.dart';
+import 'dart:io';
+
 import 'package:path/path.dart' as p;
 
-import '../utils/analyzer_utils.dart';
 import '../utils/rule_base.dart';
+import '../utils/rule_messages.dart';
 
-class LineCountRule extends Rule {
+class LineCountRule extends ArchRule {
   final String package;
-  final int minLineCount;
+  final int maxLines;
 
-  LineCountRule(this.package, this.minLineCount);
+  LineCountRule(this.package, this.maxLines);
 
   @override
-  Future<void> check(String rootDir) async {
-    final unitsWithPath = await parseDirectoryWithPaths(rootDir);
+  Future<void> check() async {
+    final violations = <String>[];
+    final directory = Directory('.');
 
-    for (final entry in unitsWithPath.entries) {
-      final path = p.normalize(entry.key);
-      final unit = entry.value;
+    await for (final entity in directory.list(recursive: true)) {
+      if (entity is File && entity.path.endsWith('.dart')) {
+        final path = p.normalize(entity.path);
 
-      if (!path.contains(p.join(rootDir, package))) continue;
+        if (!path.contains(package)) continue;
 
-      // Get line information for the compilation unit
-      final lineInfo = unit.lineInfo;
+        final lines = await entity.readAsLines();
+        final lineCount = lines.length;
 
-      for (final declaration in unit.declarations) {
-        if (declaration is ClassDeclaration) {
-          final name = declaration.name.lexeme;
-          // Calculate number of lines using LineInfo
-          final startLine =
-              lineInfo.getLocation(declaration.beginToken.offset).lineNumber;
-          final endLine =
-              lineInfo.getLocation(declaration.endToken.offset).lineNumber;
-          final lineCount = endLine - startLine + 1;
-
-          if (lineCount <= minLineCount) {
-            throw Exception(
-              'Classe "$name" em "$package" deve ter mais de $minLineCount linhas, mas tem $lineCount (Arquivo: $path)',
-            );
-          }
+        if (lineCount > maxLines) {
+          violations
+              .add(RuleMessages.lineCountViolation(path, lineCount, maxLines));
         }
       }
+    }
+
+    if (violations.isNotEmpty) {
+      throw Exception(RuleMessages.violationFound('Line count', violations));
     }
   }
 }

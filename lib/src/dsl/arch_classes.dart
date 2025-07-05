@@ -1,31 +1,115 @@
 import '../rules/access_rule.dart';
 import '../rules/annotation_rule.dart';
+import '../rules/clean_architecture_rule.dart';
 import '../rules/combine_rule.dart';
+import '../rules/combined_naming_location_rule.dart';
+import '../rules/constructor_params_rule.dart';
 import '../rules/cyclic_dependency_rule.dart';
 import '../rules/extend_rule.dart';
+import '../rules/features_independence_rule.dart';
 import '../rules/field_rule.dart';
 import '../rules/implement_rule.dart';
 import '../rules/import_rule.dart';
 import '../rules/line_count_rule.dart';
 import '../rules/method_rule.dart';
 import '../rules/method_rule_type.dart';
+import '../rules/multiple_no_dependency_rule.dart';
 import '../rules/naming_rule.dart';
 import '../rules/no_dependency_rule.dart';
 import '../rules/only_dependency_rule.dart';
 import '../rules/reside_in_rule.dart';
 import '../rules/visibility_rule.dart';
+import '../selectors/enum_selector.dart';
 import '../utils/rule_base.dart';
 
 enum VisibilityEnum { public, private }
 
 class ClassSelector {
   final String package;
+  final String? nameFilter;
+  final bool? checkContains;
+  final bool? checkPrefix;
 
-  ClassSelector(this.package);
+  ClassSelector(
+    this.package, {
+    this.nameFilter,
+    this.checkContains,
+    this.checkPrefix,
+  });
+
+  ClassSelector inPackage(String packageName) => ClassSelector(
+        packageName,
+        nameFilter: nameFilter,
+        checkContains: checkContains,
+        checkPrefix: checkPrefix,
+      );
+
+  ClassSelector inFolder(String folder) => ClassSelector(
+        folder,
+        nameFilter: nameFilter,
+        checkContains: checkContains,
+        checkPrefix: checkPrefix,
+      );
+
+  ClassSelector inDirectory(String directory) => ClassSelector(
+        directory,
+        nameFilter: nameFilter,
+        checkContains: checkContains,
+        checkPrefix: checkPrefix,
+      );
+
+  ClassSelector inFile(String file) => ClassSelector(
+        file,
+        nameFilter: nameFilter,
+        checkContains: checkContains,
+        checkPrefix: checkPrefix,
+      );
 
   NoDependencyRule shouldNotDependOn(String targetPackage) {
     return NoDependencyRule(package, targetPackage);
   }
+
+  MultipleNoDependencyRule shouldNotDependOnAny(List<String> targetPackages) {
+    return MultipleNoDependencyRule(package, targetPackages);
+  }
+
+  OnlyDependencyRule shouldOnlyDependOn(List<String> packages) {
+    return OnlyDependencyRule(package, packages);
+  }
+
+  CleanArchitectureRule shouldFollowCleanArchitecture(
+      {List<String>? allowedLayers}) {
+    return CleanArchitectureRule(package, allowedLayers: allowedLayers);
+  }
+
+  VisibilityRule shouldBePublic() => VisibilityRule(package, Visibility.public);
+  VisibilityRule shouldBePrivate() =>
+      VisibilityRule(package, Visibility.private);
+  VisibilityRule shouldBeFinal() =>
+      VisibilityRule(package, Visibility.finalClass);
+  VisibilityRule shouldBeAbstract() =>
+      VisibilityRule(package, Visibility.abstract);
+  VisibilityRule shouldBeSealed() => VisibilityRule(package, Visibility.sealed);
+  VisibilityRule shouldBeBase() => VisibilityRule(package, Visibility.base);
+  VisibilityRule shouldBeMixin() => VisibilityRule(package, Visibility.mixin);
+  VisibilityRule shouldBeEnum() =>
+      VisibilityRule(package, Visibility.enumClass);
+  VisibilityRule shouldBeRecord() => VisibilityRule(package, Visibility.record);
+  VisibilityRule shouldBeInterface() =>
+      VisibilityRule(package, Visibility.interface);
+  VisibilityRule shouldBeAbstractInterface() =>
+      VisibilityRule(package, Visibility.abstractInterface);
+
+  VisibilityRule shouldNotBe(Visibility visibility) =>
+      VisibilityRule(package, visibility, negate: true);
+  VisibilityRule shouldNotBeAbstract() =>
+      VisibilityRule(package, Visibility.abstract, negate: true);
+  VisibilityRule shouldNotBeFinal() =>
+      VisibilityRule(package, Visibility.finalClass, negate: true);
+  VisibilityRule shouldNotBeSealed() =>
+      VisibilityRule(package, Visibility.sealed, negate: true);
+  VisibilityRule shouldNotBeBase() =>
+      VisibilityRule(package, Visibility.base, negate: true);
 
   NoDependencyRule shouldNotAccessPackage(String targetPackage) {
     return NoDependencyRule(package, targetPackage);
@@ -47,11 +131,15 @@ class ClassSelector {
     return FieldRule(package, shouldBeFinal: false);
   }
 
+  FieldRule shouldHaveFinalFields() {
+    return FieldRule(package, shouldBeFinal: true);
+  }
+
   CyclicDependencyRule shouldHaveNoCyclicDependencies(List<String> packages) {
     return CyclicDependencyRule(packages);
   }
 
-  CombinedRule shouldComplyWith(List<Rule> rules) {
+  CombinedRule shouldComplyWith(List<ArchRule> rules) {
     return CombinedRule(package, rules);
   }
 
@@ -63,75 +151,177 @@ class ClassSelector {
     return ImplementRule(package, interfaceName);
   }
 
+  ImplementRule shouldImplementInterfaceThatEndsWith(String suffix) {
+    return ImplementRule(package, '', interfaceNameSuffix: suffix);
+  }
+
+  ImplementRule shouldImplementOnly(List<String> interfaces) =>
+      ImplementRule(package, interfaces.first, allowedInterfaces: interfaces);
+
+  ExtendRule shouldExtend(String className) => ExtendRule(package, className);
+  ExtendRule shouldExtendAnyOf(List<String> classNames) =>
+      ExtendRule(package, classNames.first, allowedClasses: classNames);
+
   MethodRuleBuilder shouldHaveMethodThat() {
     return MethodRuleBuilder(package);
-  }
-
-  NamingRule shouldHaveNameEndingWith(String suffix) {
-    return NamingRule(package, suffix);
-  }
-
-  OnlyDependencyRule shouldOnlyDependOn(List<String> packages) {
-    return OnlyDependencyRule(package, packages);
-  }
-
-  ImportRule shouldNotHaveImports(List<String> imports) {
-    return ImportRule(package, imports);
-  }
-
-  FieldRule shouldHaveFinalFields() {
-    return FieldRule(package, shouldBeFinal: true);
-  }
-
-  NamingRule shouldHaveMethodWithName(String name) {
-    return NamingRule(package, name);
   }
 
   MethodRuleBuilder shouldHaveAllMethods() {
     return MethodRuleBuilder(package, checkAll: true);
   }
 
-  NamingRule withNameEndingWith(String suffix) => NamingRule(package, suffix);
-  NamingRule withNameContaining(String substring) =>
-      NamingRule(package, substring, checkContains: true);
-  AnnotationRule withAnnotation(String annotation) =>
-      AnnotationRule(package, annotation);
-  LineCountRule withLineCountGreaterThan(int count) =>
-      LineCountRule(package, count);
+  NamingRule shouldHaveNameEndingWith(String suffix) {
+    return NamingRule(package, suffix, checkClasses: true, checkMethods: false);
+  }
 
-  // Affirmatives
-  VisibilityRule shouldBeAbstract() =>
-      VisibilityRule(package, Visibility.abstract);
-  VisibilityRule shouldBeSealed() => VisibilityRule(package, Visibility.sealed);
-  VisibilityRule shouldBeBase() => VisibilityRule(package, Visibility.base);
-  VisibilityRule shouldBeMixin() => VisibilityRule(package, Visibility.mixin);
-  VisibilityRule shouldBeRecord() => VisibilityRule(package, Visibility.record);
-  ExtendRule shouldExtend(String className) => ExtendRule(package, className);
-  ExtendRule shouldExtendAnyOf(List<String> classNames) =>
-      ExtendRule(package, classNames.first, allowedClasses: classNames);
-  ImplementRule shouldImplementOnly(List<String> interfaces) =>
-      ImplementRule(package, interfaces.first, allowedInterfaces: interfaces);
+  NamingRule shouldHaveMethodWithName(String name) {
+    return NamingRule.forMethods(package, name);
+  }
+
+  ImportRule shouldNotHaveImports(List<String> imports) {
+    return ImportRule(package, imports);
+  }
+
   VisibilityRule shouldHaveOnlyPrivateConstructors() =>
       VisibilityRule(package, Visibility.private, isConstructor: true);
+
+  VisibilityRule shouldHaveOnlyPublicConstructors() =>
+      VisibilityRule(package, Visibility.public, isConstructor: true);
+
+  ConstructorParamsRule shouldRequireAllParams() => ConstructorParamsRule(
+      package, ConstructorParamsRuleType.requireAllParams);
+
+  ConstructorParamsRule shouldHaveOnlyNamedRequiredParams() =>
+      ConstructorParamsRule(
+          package, ConstructorParamsRuleType.onlyNamedRequiredParams);
+
   ResideInRule shouldBeInPackage(String packageName) =>
       ResideInRule(package, packageName);
+
   ResideInRule shouldBeInAnyPackage(List<String> packages) =>
       ResideInRule(package, packages.first, allowedPackages: packages);
-  ResideInRule shouldBeInFolder(String folder) =>
-      ResideInRule(package, folder, isFolder: true);
+
   AccessRule shouldOnlyBeAccessedBy(List<String> packages) =>
       AccessRule(package, packages);
 
-  // Negatives
-  VisibilityRule shouldNotBe(Visibility visibility) =>
-      VisibilityRule(package, visibility, negate: true);
+  ClassSelector withNameEndingWith(String suffix) => ClassSelector(
+        package,
+        nameFilter: suffix,
+        checkContains: false,
+        checkPrefix: false,
+      );
+
+  ClassSelector withNameContaining(String substring) => ClassSelector(
+        package,
+        nameFilter: substring,
+        checkContains: true,
+        checkPrefix: false,
+      );
+
+  ClassSelector withNameStartingWith(String prefix) => ClassSelector(
+        package,
+        nameFilter: prefix,
+        checkContains: false,
+        checkPrefix: true,
+      );
+
+  AnnotationRule withAnnotation(String annotation) =>
+      AnnotationRule(package, annotation);
+
+  LineCountRule withLineCountGreaterThan(int count) =>
+      LineCountRule(package, count);
+
+  ArchRule shouldBeInFolder(String folder) {
+    if (nameFilter == null) {
+      return ResideInRule(package, folder, isFolder: true);
+    }
+
+    return CombinedNamingLocationRule(
+      nameFilter!,
+      folder,
+      checkContains: checkContains ?? false,
+      checkPrefix: checkPrefix ?? false,
+    );
+  }
 }
 
-ClassSelector classes() => ClassSelectorExtension('').inPackage('');
+class MethodSelector {
+  final String package;
 
-extension ClassSelectorExtension on Object {
-  ClassSelector inPackage(String package) => ClassSelector(package);
+  MethodSelector(this.package);
+
+  MethodSelector inPackage(String packageName) => MethodSelector(packageName);
+  MethodSelector inFolder(String folder) => MethodSelector(folder);
+  MethodSelector inDirectory(String directory) => MethodSelector(directory);
+  MethodSelector inFile(String file) => MethodSelector(file);
+
+  NamingRule shouldHaveNameEndingWith(String suffix) {
+    return NamingRule.forMethods(package, suffix);
+  }
+
+  NamingRule shouldHaveNameContaining(String substring) {
+    return NamingRule.forMethods(package, substring, checkContains: true);
+  }
+
+  MethodRule shouldBeAsync() {
+    return MethodRule(package, MethodRuleType.async, checkAll: true);
+  }
+
+  MethodRule shouldBePrivate() {
+    return MethodRule(package, MethodRuleType.visibility,
+        isPrivate: true, checkAll: true);
+  }
+
+  MethodRule shouldReturnType(String type) {
+    return MethodRule(package, MethodRuleType.returnType,
+        expectedType: type, checkAll: true);
+  }
 }
+
+class FunctionSelector {
+  final String package;
+
+  FunctionSelector(this.package);
+
+  FunctionSelector inPackage(String packageName) =>
+      FunctionSelector(packageName);
+  FunctionSelector inFolder(String folder) => FunctionSelector(folder);
+  FunctionSelector inDirectory(String directory) => FunctionSelector(directory);
+  FunctionSelector inFile(String file) => FunctionSelector(file);
+
+  NamingRule shouldHaveNameEndingWith(String suffix) {
+    return NamingRule.forFunctions(package, suffix);
+  }
+
+  NamingRule shouldHaveNameContaining(String substring) {
+    return NamingRule.forFunctions(package, substring, checkContains: true);
+  }
+
+  MethodRule shouldBeAsync() {
+    return MethodRule(package, MethodRuleType.async, isFunction: true);
+  }
+
+  MethodRule shouldReturnType(String type) {
+    return MethodRule(package, MethodRuleType.returnType,
+        expectedType: type, isFunction: true);
+  }
+}
+
+class FeaturesSelector {
+  final String featuresPath;
+
+  FeaturesSelector([this.featuresPath = 'features']);
+
+  FeaturesIndependenceRule shouldBeIndependent() {
+    return FeaturesIndependenceRule(featuresPath);
+  }
+}
+
+ClassSelector classes() => ClassSelector('');
+MethodSelector methods() => MethodSelector('');
+FunctionSelector functions() => FunctionSelector('');
+EnumSelector enums() => EnumSelector('');
+FeaturesSelector features([String path = 'features']) => FeaturesSelector(path);
 
 class MethodRuleBuilder {
   final String package;
@@ -142,7 +332,7 @@ class MethodRuleBuilder {
   MethodRule returnType(String type) {
     return MethodRule(
       package,
-      MethodRuleType.returnType, // Fixed: Corrected to returnType
+      MethodRuleType.returnType,
       expectedType: type,
       checkAll: checkAll,
     );
@@ -199,5 +389,13 @@ class MethodRuleBuilder {
       expectedParameters: parameters,
       checkAll: checkAll,
     );
+  }
+
+  NamingRule withNameEndingWith(String suffix) {
+    return NamingRule.forMethods(package, suffix);
+  }
+
+  NamingRule withNameContaining(String substring) {
+    return NamingRule.forMethods(package, substring, checkContains: true);
   }
 }
